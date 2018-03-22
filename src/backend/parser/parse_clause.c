@@ -2047,7 +2047,6 @@ grouping_rewrite_walker(Node *node, void *context)
 
 
 /*
- *
  * create_group_clause
  * 	Order group clauses based on equivalent sort clauses to allow plans
  * 	with sort-based grouping implementation,
@@ -2057,11 +2056,9 @@ grouping_rewrite_walker(Node *node, void *context)
  *
  *  the remaining GROUP-BY tle's are stored in tlist_remainder
  *
- *
  */
 static List *
-create_group_clause(List *tlist_group, List *targetlist,
-					List *sortClause, List **tlist_remainder)
+create_group_clause(List *tlist_group, List *targetlist, List *sortClause)
 {
 	List	   *result = NIL;
 	ListCell   *l;
@@ -2112,9 +2109,6 @@ create_group_clause(List *tlist_group, List *targetlist,
 		if (!found)
 			break;
 	}
-
-	/* Save remaining GROUP-BY tle's */
-	*tlist_remainder = tlist;
 
 	return result;
 }
@@ -2196,11 +2190,7 @@ transformGroupClause(ParseState *pstate, List *grouplist,
 	}
 
 	/* create first group clauses based on sort clauses */
-	List *tle_list_remainder = NIL;
-	result = create_group_clause(tle_list,
-								*targetlist,
-								sortClause,
-								&tle_list_remainder);
+	result = create_group_clause(tle_list, *targetlist, sortClause);
 
 	/*
 	 * Now add all remaining elements of the GROUP BY list to the result list.
@@ -2302,7 +2292,6 @@ transformGroupClause(ParseState *pstate, List *grouplist,
 	}
 
 	list_free(tle_list);
-	list_free(tle_list_remainder);
 	freeGroupList(reorder_grouplist);
 
 	return result;
@@ -2599,64 +2588,6 @@ transformWindowDefinitions(ParseState *pstate,
 		pstate->p_windowdefs = NIL;
 
 	return result;
-}
-
-/*
- * transformDistinctToGroupBy
- *
- * 		transform DISTINCT clause to GROUP-BY clause
- */
-List *
-transformDistinctToGroupBy(ParseState *pstate, List **targetlist,
-							List **sortClause, List **groupClause)
-{
-	List *group_tlist = list_copy(*targetlist);
-
-	/*
-	 * create first group clauses based on matching sort clauses, if any
-	 */
-	List *group_tlist_remainder = NIL;
-	List *group_clause_list = create_group_clause(group_tlist,
-												*targetlist,
-												*sortClause,
-												&group_tlist_remainder);
-
-	if (list_length(group_tlist_remainder) > 0)
-	{
-		/*
-		 * append remaining group clauses to the end of group clause list
-		 */
-		ListCell *lc = NULL;
-
-		foreach(lc, group_tlist_remainder)
-		{
-			TargetEntry *tle = (TargetEntry *) lfirst(lc);
-			if (!tle->resjunk)
-			{
-				SortBy sortby;
-
-				sortby.type = T_SortBy;
-				sortby.sortby_dir = SORTBY_DEFAULT;
-				sortby.sortby_nulls = SORTBY_NULLS_DEFAULT;
-				sortby.useOp = NIL;
-				sortby.location = -1;
-				sortby.node = (Node *) tle->expr;
-				group_clause_list = addTargetToSortList(pstate, tle,
-														group_clause_list, *targetlist,
-														&sortby, true);
-			}
-		}
-	}
-
-	*groupClause = group_clause_list;
-
-	list_free(group_tlist);
-	list_free(group_tlist_remainder);
-
-	/*
-	 * return empty distinct list, since we have created a grouping clause to do the job
-	 */
-	return NIL;
 }
 
 
