@@ -1,0 +1,193 @@
+set_failed_anchor: &set_failed
+  do:
+  - task: on_failure_set_failed
+    tags: ["ccp"]
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pivotaldata/ccp
+          tag: "7"
+      inputs:
+        - name: ccp_src
+        - name: terraform
+      run:
+        path: 'ccp_src/aws/ccp_failed_test.sh'
+      params:
+        AWS_ACCESS_KEY_ID: {{tf-machine-access-key-id}}
+        AWS_SECRET_ACCESS_KEY: {{tf-machine-secret-access-key}}
+        AWS_DEFAULT_REGION: {{tf-machine-region}}
+        BUCKET_PATH: clusters/
+        BUCKET_NAME: {{tf-bucket-name}}
+
+resource_types:
+  - name: gcs-resource
+    type: docker-image
+    source:
+      repository: frodenas/gcs-resource
+
+- name: terraform
+  type: docker-image
+  source:
+    repository: ljfranklin/terraform-resource
+
+resources:
+- name: terraform
+  type: terraform
+  source:
+    env:
+      AWS_ACCESS_KEY_ID: {{tf-machine-access-key-id}}
+      AWS_SECRET_ACCESS_KEY: {{tf-machine-secret-access-key}}
+    storage:
+      access_key_id: {{tf-machine-access-key-id}}
+      secret_access_key: {{tf-machine-secret-access-key}}
+      region_name: {{aws-region}}
+      bucket: {{tf-bucket-name}}
+      bucket_path: clusters/
+
+- name: ccp_src
+  type: git
+  source:
+    branch: {{ccp-git-branch}}
+    private_key: {{ccp-git-key}}
+    uri: {{ccp-git-remote}}
+    tag_filter: 1.6.0
+
+- name: gpdb_src
+  type: git
+  source:
+    branch: {{gpdb-git-branch}}
+    uri: {{gpdb-git-remote}}
+    ignore_paths:
+    - gpdb-doc/*
+    - README*
+
+- name: bin_gpdb4_centos6
+  type: s3
+  source:
+    access_key_id: {{gpdb4-bucket-access-key-id}}
+    bucket: {{gpdb4-bucket-name}}
+    region_name: {{aws-region}}
+    secret_access_key: {{gpdb4-bucket-secret-access-key}}
+    versioned_file: bin_gpdb_centos/bin_gpdb.tar.gz
+
+- name: bin_gpdb5_centos6
+  type: s3
+  source:
+    access_key_id: {{ccp-gpdb-binary-bucket-access-key-id}}
+    bucket: {{ccp-gpdb-binary-bucket-name}}
+    region_name: {{aws-region}}
+    secret_access_key: {{ccp-gpdb-binary-bucket-secret-access-key}}
+    versioned_file: bin_gpdb_centos6/bin_gpdb.tar.gz
+
+- name: bin_gpdb6_centos6
+  type: s3
+  source:
+    access_key_id: {{bucket-access-key-id}}
+    bucket: {{bucket-name}}
+    region_name: {{aws-region}}
+    secret_access_key: {{bucket-secret-access-key}}
+    versioned_file: bin_gpdb_centos/bin_gpdb.tar.gz
+
+- name: sqldump
+  type: s3
+  source:
+    access_key_id: {{sqldump-bucket-access-key-id}}
+    bucket: {{sqldump-bucket-name}}
+    region_name: {{aws-region}}
+    secret_access_key: {{sqldump-bucket-secret-access-key}}
+    versioned_file: dump.sql.xz
+
+- name: perf_src
+  type: git
+  source:
+    branch: dev/pg_upgrade
+    private_key: {{perf-git-key}}
+    uri: {{perf-git-remote}}
+    ignore_paths:
+    - README*
+
+- name: centos-gpdb-dev-6
+  type: docker-image
+  source:
+    repository: pivotaldata/centos-gpdb-dev
+    tag: '6-gcc6.2-llvm3.7'
+
+jobs:
+
+- name: create_2_node_cluster
+  ensure:
+    <<: *set_failed
+  max_in_flight: 1
+  plan:
+  - aggregate:
+    - get: ccp_src
+      tags: ["ccp"]
+    - get: gpdb_src
+      tags: ["ccp"]
+    - get: perf_src
+      tags: ["ccp"]
+    - get: centos-gpdb-dev-6
+      tags: ["ccp"]
+    - get: bin_gpdb4_centos6
+      tags: ["ccp"]
+    - get: bin_gpdb5_centos6
+      tags: ["ccp"]
+      trigger: true
+    - get: bin_gpdb6_centos6
+      tags: ["ccp"]
+      trigger: true
+    - get: sqldump
+      tags: ["ccp"]
+      trigger: true
+  - put: terraform
+    tags: ["ccp"]
+    params:
+      action: create
+      delete_on_failure: true
+      generate_random_name: true
+      terraform_source: ccp_src/aws/
+      vars:
+        aws_instance-node-instance_type: m4.large
+        platform: centos6
+        ccp_reap_minutes: 240
+        number_of_nodes: 2
+
+  - task: gen_cluster
+    tags: ["ccp"]
+    file: ccp_src/ci/tasks/gen_cluster.yml
+    params:
+      AWS_ACCESS_KEY_ID: {{tf-machine-access-key-id}}
+      AWS_SECRET_ACCESS_KEY: {{tf-machine-secret-access-key}}
+      AWS_DEFAULT_REGION: {{aws-region}}
+      BUCKET_PATH: clusters/
+      BUCKET_NAME: {{tf-bucket-name}}
+      platform: centos6
+    input_mapping:
+      gpdb_binary: {{initial-cluster-gpdb-binary}}
+
+  - task: test_upgrade
+    tags: ["ccp"]
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: toolsmiths/ccp
+          tag: "7"
+      inputs:
+      - name: terraform
+      - name: ccp_src
+      - name: cluster_env_files
+      - name: perf_src
+      - name: {{upgraded-cluster-gpdb-binary}}
+      - name: sqldump
+      run:
+        path: perf_src/test_upgrade.sh
+        args:
+          - 2
+          - {{upgraded-cluster-gpdb-binary}}
+          - sqldump/dump.sql.xz
+      params:
+        DEBUG_UPGRADE: {{enable-debug-output}}

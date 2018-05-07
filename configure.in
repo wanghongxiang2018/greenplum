@@ -278,6 +278,13 @@ fi])
 AC_SUBST(enable_coverage)
 
 #
+# --enable-go-utils
+#
+PGAC_ARG_BOOL(enable, go-utils, no,
+              [  --enable-go-utils      build all go executables in go-utils directory])
+AC_SUBST(enable_go_utils)
+
+#
 # DTrace
 #
 PGAC_ARG_BOOL(enable, dtrace, no,
@@ -1368,6 +1375,14 @@ if test "$with_ossp_uuid" = yes ; then
       [AC_MSG_ERROR([library 'ossp-uuid' or 'uuid' is required for OSSP-UUID])])])
 fi
 AC_SUBST(OSSP_UUID_LIBS)
+
+# Check for golang.
+if test "$enable_go_utils" = yes ; then
+  AC_CHECK_PROGS(GOLANG, go)
+  if test -z "$GOLANG"; then
+    AC_MSG_ERROR([go toolchain not found])
+  fi
+fi
 
 # Check for Greenplum Query Optimizer (orca) libraries.
 if test "$enable_orca" = yes; then

@@ -1267,9 +1267,10 @@ GetOldestXmin(bool allDbs, bool ignoreVacuum)
 
 	/*
 	 * In QD node, all distributed transactions have an entry in the proc array,
-	 * so we're done.
+	 * so we're done. During binary upgrade, we don't have distributed
+	 * transactions, so we're done there too.
 	 */
-	if (Gp_role != GP_ROLE_DISPATCH)
+	if (Gp_role != GP_ROLE_DISPATCH && !IsBinaryUpgrade)
 	{
 		TransactionId distribOldestXmin;
 

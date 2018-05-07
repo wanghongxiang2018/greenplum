@@ -2,11 +2,12 @@
 set -exo pipefail
 
 GREENPLUM_INSTALL_DIR=/usr/local/gpdb
-CWDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+GPDB_SRC_PATH=${GPDB_SRC_PATH:=gpdb_src}
 
 function prep_env_for_centos() {
   export JAVA_HOME=/usr/lib/jvm/java-1.6.0-openjdk-1.6.0.39.x86_64
-  export PATH=${JAVA_HOME}/bin:${PATH}
+  export GOPATH=$(pwd)/${GPDB_SRC_PATH}/gpMgmt/go-utils
+  export PATH=${JAVA_HOME}/bin:${PATH}:${GOPATH}/bin
   install_system_deps
 }
 
@@ -47,7 +48,7 @@ function build_gpdb() {
   pushd gpdb_src
     source /opt/gcc_env.sh
     CC=$(which gcc) CXX=$(which g++) ./configure --enable-mapreduce --with-perl --with-libxml \
-	--disable-orca --with-python --disable-gpfdist --prefix=${GREENPLUM_INSTALL_DIR}
+	--disable-orca --with-python --enable-go-utils --disable-gpfdist --prefix=${GREENPLUM_INSTALL_DIR}
     # Use -j4 to speed up the build. (Doesn't seem worth trying to guess a better
     # value based on number of CPUs or anything like that. Going above -j4 wouldn't
     # make it much faster, and -j4 is small enough to not hurt too badly even on

@@ -45,12 +45,10 @@ function prep_env_for_centos() {
 
   source /opt/gcc_env.sh
   ln -sf $(pwd)/${GPDB_SRC_PATH}/gpAux/ext/${BLDARCH}/python-2.7.12 /opt/python-2.7.12
-  export PATH=${JAVA_HOME}/bin:${PATH}
 }
 
 function prep_env_for_sles() {
   export JAVA_HOME=$(expand_glob_ensure_exists /usr/java/jdk1.7*)
-  export PATH=${JAVA_HOME}/bin:${PATH}
   source /opt/gcc_env.sh
 }
 
@@ -151,6 +149,8 @@ function _main() {
         ;;
   esac
 
+  export GOPATH=$(pwd)/${GPDB_SRC_PATH}/gpMgmt/go-utils
+  export PATH=${JAVA_HOME}/bin:${PATH}:${GOPATH}/bin
   generate_build_number
   make_sync_tools
   case "${TARGET_OS}" in
@@ -171,6 +171,7 @@ function _main() {
   # builds.
   export ADDON_DIR=addon
   export CONFIGURE_FLAGS=${CONFIGURE_FLAGS}
+
   # We cannot symlink the addon directory here because `make -C` resolves the
   # symlink and `cd`s to the actual directory. Currently the Makefile in the
   # addon directory assumes that it is located in a particular location under
